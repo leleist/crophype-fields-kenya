@@ -1,0 +1,8 @@
+# CropHype field QC toolkit
+# Tested on Python 3.12
+
+
+# tkinter is part of the Python standard library.
+geopandas>=1.1
+pandas>=2.3
+Pillow>=9.1
