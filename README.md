@@ -103,6 +103,9 @@ Please cite the accompanying paper and Zenodo sources:
 
 TBA 
 
+Leist, L., & Bendix, J. (2026). 20,000 smallholder crop type and intercropping records for western 
+Kenya, 2023–2025 (1.0.0) [Data set]. Zenodo. https://doi.org/10.5281/zenodo.20268110
+
 <br>
 
 ## License 
