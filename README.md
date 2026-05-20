@@ -1,4 +1,4 @@
-![crophype_fields banner](figures/CropHype-fields_kenya-banner-02.jpeg)
+![crophype_fields banner](figures/CropHype-fields_kenya-banner-03.jpeg)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Python](https://img.shields.io/badge/python-3.12+-brightgreen.svg)](https://www.python.org/)
 
