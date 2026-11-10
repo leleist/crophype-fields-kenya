@@ -3,7 +3,7 @@
 [![Python](https://img.shields.io/badge/python-3.12+-brightgreen.svg)](https://www.python.org/)
 
 This repository provides an overview of the data, tools and scripts to accompany the dataset
-publication "[20,000 smallholder crop type and intercropping records for western Kenya, 2023–2025]()".
+publication "[A 20,000-field dataset of crop types and intercropping from smallholder farms of western Kenya, 2023-2025]()".
 
 The paper, outlining the data acquisition, procurement and validation is available [here (TBA)]().<br>
 The dataset is available on Zenodo: [https://doi.org/10.5281/zenodo.20268110](https://doi.org/10.5281/zenodo.20268110).
@@ -37,7 +37,7 @@ the canonical geopackage with field geometries, crop-types and auxiliary attribu
 readme file, as well as a "*_QC.gpkg" that contains additional attributes from thematic and geometric
 validation.
 
-The main attributes: *field_id, crop_main, crop_sec, growth_main, growth_sec, photo, timestamp, area_acres*
+The main attributes: *field_id, crop_main, crop_sec, growth_main, growth_sec, photo, timestamp, area_ha*
 are standardized across all subsets, while auxiliary attributes may differ between subsets.
 ```text
 ── data/
@@ -56,6 +56,7 @@ filtering of the field data is provided.
 The data processing steps include:
 - photo anonymization (done manually, no code needed)
 - data cleaning and attribute harmonization 
+- geometry repair of self-intersections and spikes (vertex angles < 20°, area change <= 2 %)
 - thematic validation using the field-QC-tool (see below)
 - geometric validation (done manually in QGIS, no code needed)
 - statistics summarization and overview of validation results 
@@ -103,8 +104,8 @@ Please cite the accompanying paper and Zenodo sources:
 
 TBA 
 
-Leist, L., & Bendix, J. (2026). 20,000 smallholder crop type and intercropping records for western 
-Kenya, 2023–2025 (1.0.0) [Data set]. Zenodo. https://doi.org/10.5281/zenodo.20268110
+Leist, L., & Bendix, J. (2026). A 20,000-field dataset of crop types and intercropping from 
+smallholder farms of western Kenya, 2023-2025 (1.0.0) [Dataset]. Zenodo. https://doi.org/10.5281/zenodo.20268110
 
 <br>
 

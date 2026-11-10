@@ -8,6 +8,8 @@ Three function families:
      and drop list. Used to harmonize per-campaign source schemas to the
      published one.
    - assign_field_ids      : generate the 9-digit YYYYSNNNN field identifier.
+   - repair_geometries     : repair self-intersections and remove spike /
+     notch vertices (angle < 20 deg, area change <= 2 %).
 
 2. Photo deduplication
    - resolve_photo_references : cleaning of the `photo` column:
@@ -32,7 +34,9 @@ import re
 from collections import defaultdict
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
+import shapely
 
 
 # Standardization
@@ -48,7 +52,7 @@ def standardize_dataframe(df, column_mapping, drop_columns):
     `column_mapping` is intended to be a per-campaign dictionary mapping
     raw-source column names to the canonical published names
     (`field_id`, `crop_main`, `crop_sec`, `growth_main`, `growth_sec`,
-    `photo`, `timestamp`, `area_acres`, etc.). `drop_columns` lists
+    `photo`, `timestamp`, `area_ha`, etc.). `drop_columns` lists
     bookkeeping / shapefile-artefact columns that should not appear in the
     published file. Both are free configuration.
     """
@@ -76,6 +80,95 @@ def assign_field_ids(df, year, season_code):
     df = df.copy()
     df.insert(0, "field_id", ids)
     return df
+
+
+# Geometry repair
+
+def _vertex_angles(coords):
+    """Return the corner angle (degrees) and the length of the shorter of the
+         two adjacent edges (m) for every vertex of a polygon outline.
+
+         `coords` is the outline as an (n, 2) array without the repeated closing
+         point. ~180° = straight edge, ~90° = normal corner, near 0° = spike/notch.
+         """
+    a = np.roll(coords, 1, axis=0) - coords
+    b = np.roll(coords, -1, axis=0) - coords # vectors from and to focus-vertex
+    la, lb = np.hypot(*a.T), np.hypot(*b.T) # vector lengths (to filter out gps gitter later.
+    angle = np.degrees(np.arccos(np.clip((a * b).sum(1) / (la * lb), -1, 1))) # angle of two edges
+    return angle, np.minimum(la, lb)
+
+
+def repair_geometries(gdf, max_angle=20.0, max_area_loss=0.02, min_edge=1.0, jitter_tol=0.5):
+    """Repair geometric artefacts of field polygons.
+
+    Returns a copy of `gdf` and a log DataFrame of the changed rows.
+
+    1. Invalid geometries (self-intersections, "bow-ties") are repaired with a
+       zero-width buffer (``buffer(0)``).
+    2. Single-part MultiPolygons are converted to Polygons.
+    3. Spikes: fields with a vertex angle below `max_angle` (both adjacent edges
+       >= `min_edge` m, checked on the raw and a `jitter_tol` m simplified outline)
+       have their sharpest vertices removed until none is below `max_angle`.
+       The removal is kept only if it fills an inward notch (area grows) or
+       reduces the field area by at most `max_area_loss`. Otherwise the vertex is
+       treated as a genuine pointed field and left unchanged.
+
+    Angles and lengths are evaluated in the local UTM zone; the returned
+    geometries keep the CRS of `gdf`.
+    """
+    gdf = gdf.copy()
+    log = []
+
+    # 1 - invalid geometries
+    for i in gdf.index[~gdf.is_valid]:
+        gdf.loc[i, "geometry"] = gdf.geometry[i].buffer(0)
+        log.append({"index": i, "step": "repair_invalid"})
+
+    # 2 - single-part MultiPolygon -> Polygon
+    multi = (gdf.geom_type == "MultiPolygon") & (shapely.get_num_geometries(gdf.geometry.values) == 1)
+    gdf.loc[multi, "geometry"] = shapely.get_geometry(gdf.geometry[multi].values, 0)
+
+    # 3 - spikes and notches
+    utm = gdf.to_crs(gdf.estimate_utm_crs())
+    for i in gdf.index:
+        poly_m = utm.geometry[i]
+        if poly_m.geom_type != "Polygon":
+            continue
+        ring_m = shapely.get_coordinates(poly_m.exterior)[:-1]
+        ring_ll = shapely.get_coordinates(gdf.geometry[i].exterior)[:-1]
+        keep_dedup = np.r_[True, np.hypot(*np.diff(ring_m, axis=0).T) > 1e-6]
+        ring_m, ring_ll = ring_m[keep_dedup], ring_ll[keep_dedup]
+
+        # detection: any sharp vertex with both edges >= min_edge (raw or de-jittered outline)
+        sharp = False
+        for q in (poly_m, poly_m.simplify(jitter_tol, preserve_topology=False)):
+            if q.geom_type == "Polygon" and not q.is_empty:
+                c = shapely.get_coordinates(q.exterior)[:-1]
+                c = c[np.r_[True, np.hypot(*np.diff(c, axis=0).T) > 1e-6]]
+                angle, edge = _vertex_angles(c)
+                sharp |= bool(((angle < max_angle) & (edge >= min_edge)).any())
+        if not sharp:
+            continue
+
+        # removal: drop the sharpest vertex until none is below max_angle
+        keep, ring, idx = np.ones(len(ring_m), bool), ring_m.copy(), np.arange(len(ring_m))
+        for _ in range(10):
+            angle, _ = _vertex_angles(ring)
+            k = angle.argmin()
+            if angle[k] >= max_angle or len(ring) <= 3:
+                break
+            keep[idx[k]] = False
+            ring, idx = np.delete(ring, k, axis=0), np.delete(idx, k)
+        if keep.all():
+            continue
+
+        d_area = (shapely.Polygon(ring_m[keep]).area - poly_m.area) / poly_m.area
+        if d_area > 0 or d_area >= -max_area_loss:
+            holes = [r.coords for r in gdf.geometry[i].interiors]
+            gdf.loc[i, "geometry"] = shapely.Polygon(ring_ll[keep], holes=holes)
+            log.append({"index": i, "step": "spike_removed", "area_change_pct": round(100 * d_area, 2)})
+
+    return gdf, pd.DataFrame(log, columns=["index", "step", "area_change_pct"])
 
 
 # Photo deduplication
